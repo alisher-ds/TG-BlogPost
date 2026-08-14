@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { ensureSchema } from "./schema";
 import { ensureTelegramWebhook, handleTelegramUpdate, sendApprovalPreview } from "./telegram";
 import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./editorial";
 
@@ -21,6 +22,13 @@ export default {
           blog: Boolean(env.BLOG_USERNAME),
         },
       });
+    }
+
+    try {
+      await ensureSchema(env);
+    } catch (error) {
+      console.error("D1 schema bootstrap failed", error);
+      return Response.json({ ok: false, error: "d1_schema_bootstrap_failed" }, { status: 503 });
     }
 
     if (url.pathname === "/setup-webhook" && request.method === "GET") {
@@ -75,9 +83,11 @@ export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil((async () => {
       try {
+        await ensureSchema(env);
         await ensureTelegramWebhook(env, WORKER_ORIGIN);
       } catch (error) {
-        console.error("Telegram webhook registration failed", error);
+        console.error("Worker bootstrap failed", error);
+        return;
       }
 
       await publishDue(env);
