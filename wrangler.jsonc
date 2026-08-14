@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tg-blogpost",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
+  "vars": {
+    "BLOG_USERNAME": "AlisherTuychiyev",
+    "ADMIN_TELEGRAM_ID": "6276407335",
+    "TIMEZONE": "Asia/Tashkent",
+    "DEFAULT_MIN_POST_GAP_HOURS": "18",
+    "DEFAULT_MAX_POST_GAP_HOURS": "120"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tg-blogpost-db",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ]
+}
