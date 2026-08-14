@@ -15,6 +15,16 @@ async function callTelegram<T>(env: Env, method: string, payload: Record<string,
   return data.result as T;
 }
 
+/** Idempotent: safe to call from every cron tick. */
+export async function ensureTelegramWebhook(env: Env, origin: string): Promise<void> {
+  const webhookUrl = `${origin.replace(/\/$/, "")}/telegram/webhook`;
+  await callTelegram(env, "setWebhook", {
+    url: webhookUrl,
+    allowed_updates: ["message", "callback_query"],
+    drop_pending_updates: false,
+  });
+}
+
 export async function sendApprovalPreview(env: Env, postId: string): Promise<void> {
   const post = await getPost(env, postId);
   if (!post) throw new Error("Post not found");
