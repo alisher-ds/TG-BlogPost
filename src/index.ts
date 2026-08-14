@@ -23,26 +23,32 @@ export default {
       });
     }
 
-    // One-time/manual bootstrap endpoint. It contains no secret in the URL and
-    // only performs the idempotent Telegram setWebhook operation.
     if (url.pathname === "/setup-webhook" && request.method === "GET") {
       try {
+        if (!env.TELEGRAM_BOT_TOKEN) {
+          return Response.json({ ok: false, error: "telegram_token_missing" }, { status: 500 });
+        }
         await ensureTelegramWebhook(env, WORKER_ORIGIN);
         return Response.json({ ok: true, webhook: `${WORKER_ORIGIN}/telegram/webhook` });
       } catch (error) {
         console.error("Manual Telegram webhook setup failed", error);
-        return Response.json({ ok: false, error: "telegram_webhook_setup_failed" }, { status: 502 });
+        const message = error instanceof Error ? error.message : "unknown_error";
+        return Response.json({ ok: false, error: "telegram_webhook_setup_failed", detail: message }, { status: 502 });
       }
     }
 
     if (url.pathname === "/telegram/webhook" && request.method === "POST") {
       const update = await request.json() as any;
       ctx.waitUntil((async () => {
-        await handleTelegramUpdate(env, update);
-        const message = update?.message;
-        if (message?.chat?.id?.toString() === env.ADMIN_TELEGRAM_ID && typeof message.text === "string" && !message.text.startsWith("/")) {
-          const postId = await revisePost(env, message.text.trim());
-          if (postId) await sendApprovalPreview(env, postId);
+        try {
+          await handleTelegramUpdate(env, update);
+          const message = update?.message;
+          if (message?.chat?.id?.toString() === env.ADMIN_TELEGRAM_ID && typeof message.text === "string" && !message.text.startsWith("/")) {
+            const postId = await revisePost(env, message.text.trim());
+            if (postId) await sendApprovalPreview(env, postId);
+          }
+        } catch (error) {
+          console.error("Telegram update handling failed", error);
         }
       })());
       return Response.json({ ok: true });
