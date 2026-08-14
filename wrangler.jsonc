@@ -9,9 +9,7 @@
     "head_sampling_rate": 1
   },
   "triggers": {
-    "crons": [
-      "*/5 * * * *"
-    ]
+    "crons": ["*/5 * * * *"]
   },
   "vars": {
     "BLOG_USERNAME": "AlisherTuychiyev",
@@ -24,7 +22,8 @@
     {
       "binding": "DB",
       "database_name": "tg-blogpost-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
     }
   ]
 }
