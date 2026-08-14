@@ -21,10 +21,18 @@ function extractDatabaseId(output) {
   return parsed?.uuid ?? parsed?.database_id ?? parsed?.database?.uuid ?? parsed?.database?.database_id ?? null;
 }
 
+function resolveDatabaseId() {
+  try {
+    return extractDatabaseId(runWrangler(["d1", "info", dbName, "--json"]));
+  } catch (infoError) {
+    console.log("D1 info lookup failed; falling back to D1 list...");
+    return extractDatabaseId(runWrangler(["d1", "list", "--json"]));
+  }
+}
+
 try {
   console.log(`Resolving D1 database ID for ${dbName}...`);
-  const info = runWrangler(["d1", "info", dbName, "--json"]);
-  const databaseId = extractDatabaseId(info);
+  const databaseId = resolveDatabaseId();
 
   if (!databaseId) {
     throw new Error(`Could not resolve a database ID for ${dbName}.`);
