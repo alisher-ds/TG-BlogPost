@@ -2,6 +2,8 @@ import type { Env } from "./types";
 import { ensureTelegramWebhook, handleTelegramUpdate, sendApprovalPreview } from "./telegram";
 import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./editorial";
 
+const WORKER_ORIGIN = "https://tg-blogpost.alishertuuchiyev.workers.dev";
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -19,6 +21,18 @@ export default {
           blog: Boolean(env.BLOG_USERNAME),
         },
       });
+    }
+
+    // One-time/manual bootstrap endpoint. It contains no secret in the URL and
+    // only performs the idempotent Telegram setWebhook operation.
+    if (url.pathname === "/setup-webhook" && request.method === "GET") {
+      try {
+        await ensureTelegramWebhook(env, WORKER_ORIGIN);
+        return Response.json({ ok: true, webhook: `${WORKER_ORIGIN}/telegram/webhook` });
+      } catch (error) {
+        console.error("Manual Telegram webhook setup failed", error);
+        return Response.json({ ok: false, error: "telegram_webhook_setup_failed" }, { status: 502 });
+      }
     }
 
     if (url.pathname === "/telegram/webhook" && request.method === "POST") {
@@ -55,7 +69,7 @@ export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil((async () => {
       try {
-        await ensureTelegramWebhook(env, "https://tg-blogpost.alishertuuchiyev.workers.dev");
+        await ensureTelegramWebhook(env, WORKER_ORIGIN);
       } catch (error) {
         console.error("Telegram webhook registration failed", error);
       }
