@@ -29,16 +29,13 @@ Never commit these values:
 - `TELEGRAM_BOT_TOKEN`
 - `GEMINI_API_KEY`
 
-Set them with Wrangler secrets in the production environment.
+Set them in the Cloudflare Worker production environment/secrets.
 
-## D1
+## Cloudflare D1
 
-Create the database, put its ID in `wrangler.jsonc`, then apply migrations:
+This project is designed to use the **existing D1 database binding managed by the Cloudflare Worker dashboard**. The repository intentionally does not create, rename, or provision a D1 database during deployment.
 
-```bash
-npx wrangler d1 create tg-blogpost-db
-npx wrangler d1 migrations apply tg-blogpost-db --remote
-```
+The Worker bootstraps its application tables at runtime, so a separate migration step is not required for the production deployment path.
 
 ## Local development
 
@@ -53,8 +50,10 @@ npm run dev
 
 ```bash
 npm run check
-npx wrangler deploy
+npm run deploy
 ```
+
+The production Cloudflare deployment uses the Worker configuration in `wrangler.jsonc`. Existing dashboard-managed bindings and production secrets must remain configured in Cloudflare.
 
 After deployment, configure Telegram's webhook to point to:
 
