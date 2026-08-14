@@ -9,7 +9,7 @@ export async function runEditorialCycle(env: Env): Promise<void> {
   const runId = await createRun(env, "editorial-cycle");
   try {
     const existing = await env.DB.prepare(
-      "SELECT COUNT(*) AS count FROM posts WHERE status IN ('draft','pending_approval','approved','scheduled')",
+      "SELECT COUNT(*) AS count FROM posts WHERE status IN ('draft','pending_approval','approved','scheduled','revision_requested')",
     ).first<{ count: number }>();
     if ((existing?.count ?? 0) > 0) {
       await finishRun(env, runId, "skipped", "There is already an active post in the pipeline");
@@ -36,7 +36,7 @@ export async function runEditorialCycle(env: Env): Promise<void> {
       return;
     }
 
-    const scheduledAt = chooseNaturalTime(draft.proposed_time, env.TIMEZONE, env.DEFAULT_MIN_POST_GAP_HOURS, env.DEFAULT_MAX_POST_GAP_HOURS);
+    const scheduledAt = chooseNaturalTime(draft.proposed_time, env.DEFAULT_MIN_POST_GAP_HOURS, env.DEFAULT_MAX_POST_GAP_HOURS);
     const postId = await insertPost(env, {
       title: finalDraft.title,
       angle: finalDraft.angle,
@@ -70,9 +70,9 @@ export async function sendDueApprovals(env: Env): Promise<void> {
     `SELECT id FROM posts
      WHERE status='scheduled'
        AND approval_sent_at IS NULL
-       AND scheduled_at > datetime('now')
-       AND scheduled_at <= datetime('now', '+20 minutes')
-     ORDER BY scheduled_at ASC LIMIT 3`,
+       AND unixepoch(scheduled_at) > unixepoch('now')
+       AND unixepoch(scheduled_at) <= unixepoch('now', '+20 minutes')
+     ORDER BY unixepoch(scheduled_at) ASC LIMIT 3`,
   ).all<{ id: string }>();
 
   for (const row of rows.results) {
@@ -83,10 +83,9 @@ export async function sendDueApprovals(env: Env): Promise<void> {
 export async function publishDue(env: Env): Promise<void> {
   const rows = await env.DB.prepare(
     `SELECT id FROM posts
-     WHERE status IN ('approved','scheduled')
-       AND scheduled_at <= datetime('now')
-       AND status='approved'
-     ORDER BY scheduled_at ASC LIMIT 5`,
+     WHERE status='approved'
+       AND unixepoch(scheduled_at) <= unixepoch('now')
+     ORDER BY unixepoch(scheduled_at) ASC LIMIT 5`,
   ).all<{ id: string }>();
 
   for (const row of rows.results) {
@@ -125,7 +124,7 @@ Return JSON: {"body":"...","angle":"...","change_summary":"..."}`;
   return post.id;
 }
 
-function chooseNaturalTime(proposed: string, timezone: string, minGapText: string, maxGapText: string): string {
+function chooseNaturalTime(proposed: string, minGapText: string, maxGapText: string): string {
   const now = new Date();
   const minGap = Number(minGapText || 18);
   const maxGap = Number(maxGapText || 120);
@@ -137,7 +136,6 @@ function chooseNaturalTime(proposed: string, timezone: string, minGapText: strin
   if (candidate < min) candidate = min;
   if (candidate > max) candidate = max;
 
-  // Keep the blog irregular. Round only to a natural 5-minute boundary.
   candidate.setUTCSeconds(0, 0);
   candidate.setUTCMinutes(Math.ceil(candidate.getUTCMinutes() / 5) * 5);
   return candidate.toISOString().replace(".000Z", "Z");
