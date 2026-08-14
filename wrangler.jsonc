@@ -18,12 +18,5 @@
     "TIMEZONE": "Asia/Tashkent",
     "DEFAULT_MIN_POST_GAP_HOURS": "18",
     "DEFAULT_MAX_POST_GAP_HOURS": "120"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "tg-blogpost-db-prod",
-      "migrations_dir": "migrations"
-    }
-  ]
+  }
 }
