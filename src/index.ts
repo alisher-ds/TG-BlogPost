@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { handleTelegramUpdate } from "./telegram";
+import { handleTelegramUpdate, sendApprovalPreview } from "./telegram";
 import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./editorial";
 
 export default {
@@ -11,8 +11,15 @@ export default {
     }
 
     if (url.pathname === "/telegram/webhook" && request.method === "POST") {
-      const update = await request.json();
-      ctx.waitUntil(handleTelegramUpdate(env, update));
+      const update = await request.json() as any;
+      ctx.waitUntil((async () => {
+        await handleTelegramUpdate(env, update);
+        const message = update?.message;
+        if (message?.chat?.id?.toString() === env.ADMIN_TELEGRAM_ID && typeof message.text === "string" && !message.text.startsWith("/")) {
+          const postId = await revisePost(env, message.text.trim());
+          if (postId) await sendApprovalPreview(env, postId);
+        }
+      })());
       return Response.json({ ok: true });
     }
 
@@ -27,6 +34,7 @@ export default {
       const body = await request.json() as { instruction?: string };
       if (!body.instruction) return Response.json({ ok: false, error: "instruction_required" }, { status: 400 });
       const postId = await revisePost(env, body.instruction);
+      if (postId) await sendApprovalPreview(env, postId);
       return Response.json({ ok: true, postId });
     }
 
