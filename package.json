@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --test-scheduled",
-    "deploy": "wrangler deploy",
+    "deploy": "node scripts/deploy.mjs",
     "types": "wrangler types",
     "check": "tsc --noEmit"
   },
