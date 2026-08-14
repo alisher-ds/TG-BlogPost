@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { addFeedback, addMemory, getPost, updatePostStatus } from "./lib/db";
+import { runEditorialCycle } from "./editorial";
 
 const api = (env: Env, method: string) => `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -50,16 +51,60 @@ export async function answerCallback(env: Env, callbackId: string, text: string)
   await callTelegram(env, "answerCallbackQuery", { callback_query_id: callbackId, text, show_alert: false });
 }
 
+async function clearButtons(env: Env, callback: any): Promise<void> {
+  if (!callback.message?.chat?.id || !callback.message?.message_id) return;
+  await callTelegram(env, "editMessageReplyMarkup", {
+    chat_id: callback.message.chat.id,
+    message_id: callback.message.message_id,
+    reply_markup: { inline_keyboard: [] },
+  });
+}
+
 export async function handleTelegramUpdate(env: Env, update: any): Promise<void> {
   const callback = update.callback_query;
   if (!callback) {
     const message = update.message;
-    if (message?.chat?.id?.toString() === env.ADMIN_TELEGRAM_ID && message?.text === "/start") {
+    if (message?.chat?.id?.toString() !== env.ADMIN_TELEGRAM_ID) return;
+
+    if (message.text === "/start") {
       await callTelegram(env, "sendMessage", {
         chat_id: env.ADMIN_TELEGRAM_ID,
-        text: "Blog agent ishlayapti. Postlar tasdiqlashdan o'tmasdan kanalga chiqmaydi.",
+        text: "Blog agent ishlayapti.\n\n/run — yangi editorial cycle\n/status — pipeline holati\n/help — yordam\n\nPostlar siz tasdiqlamasangiz kanalga chiqmaydi.",
       });
+      return;
     }
+
+    if (message.text === "/help") {
+      await callTelegram(env, "sendMessage", {
+        chat_id: env.ADMIN_TELEGRAM_ID,
+        text: "/run — yangi mavzu izlash va post tayyorlash\n/status — joriy pipeline\n/start — boshqaruv menyusi\n\nPost kelganda Tasdiqlash, Rad etish yoki Tahrirlash tugmalaridan foydalaning.",
+      });
+      return;
+    }
+
+    if (message.text === "/run") {
+      await callTelegram(env, "sendMessage", {
+        chat_id: env.ADMIN_TELEGRAM_ID,
+        text: "Research boshlandi. Yaxshi mavzu topilmasa post yaratilmaydi.",
+      });
+      await runEditorialCycle(env);
+      return;
+    }
+
+    if (message.text === "/status") {
+      const rows = await env.DB.prepare(
+        "SELECT status, COUNT(*) AS count FROM posts GROUP BY status ORDER BY status",
+      ).all<{ status: string; count: number }>();
+      const lines = rows.results.length
+        ? rows.results.map((row) => `${row.status}: ${row.count}`)
+        : ["Hali post yaratilmagan."];
+      await callTelegram(env, "sendMessage", {
+        chat_id: env.ADMIN_TELEGRAM_ID,
+        text: `Pipeline holati:\n\n${lines.join("\n")}`,
+      });
+      return;
+    }
+
     return;
   }
 
@@ -74,16 +119,21 @@ export async function handleTelegramUpdate(env: Env, update: any): Promise<void>
   if (action === "approve") {
     const post = await getPost(env, postId);
     if (!post) return answerCallback(env, callback.id, "Post topilmadi.");
+    if (!["pending_approval", "scheduled"].includes(post.status)) {
+      return answerCallback(env, callback.id, `Post holati: ${post.status}`);
+    }
     await updatePostStatus(env, postId, "approved");
     await addFeedback(env, postId, "approved");
-    await answerCallback(env, callback.id, "Tasdiqlandi.");
+    await clearButtons(env, callback);
+    await answerCallback(env, callback.id, "Tasdiqlandi. Belgilangan vaqtda kanalga chiqadi.");
     return;
   }
 
   if (action === "reject") {
     await updatePostStatus(env, postId, "revision_requested");
     await addFeedback(env, postId, "rejected", "Telegramdagi Rad etish tugmasi bosildi");
-    await addMemory(env, "rejection_pattern", "telegram_rejection", "User rejected a draft from the approval preview; request explicit reason on next message.", 1);
+    await addMemory(env, "rejection_pattern", "telegram_rejection", "User rejected a draft from the approval preview; explicit feedback should be collected before revision.", 1);
+    await clearButtons(env, callback);
     await answerCallback(env, callback.id, "Rad etildi. Sababini keyingi xabarda yozing.");
     await callTelegram(env, "sendMessage", {
       chat_id: env.ADMIN_TELEGRAM_ID,
@@ -94,7 +144,12 @@ export async function handleTelegramUpdate(env: Env, update: any): Promise<void>
 
   if (action === "edit") {
     await updatePostStatus(env, postId, "revision_requested");
-    await answerCallback(env, callback.id, "Tahrirlash rejimi. Keyingi xabarda nimani o'zgartirish kerakligini yozing.");
+    await clearButtons(env, callback);
+    await answerCallback(env, callback.id, "Tahrirlash rejimi.");
+    await callTelegram(env, "sendMessage", {
+      chat_id: env.ADMIN_TELEGRAM_ID,
+      text: "Nimani o'zgartirish kerakligini keyingi xabarda yozing.",
+    });
   }
 }
 
