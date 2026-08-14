@@ -1,61 +1,94 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const sourceConfig = "wrangler.jsonc";
 const deployConfig = "wrangler.deploy.jsonc";
-const dbName = "tg-blogpost-db";
+const workerName = "tg-blogpost";
 
-function runWrangler(args) {
+function runWrangler(args, options = {}) {
   return execFileSync("npx", ["--yes", "wrangler", ...args], {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
+    cwd: options.cwd,
   });
 }
 
-function extractDatabaseId(output) {
-  const parsed = JSON.parse(output);
-  if (Array.isArray(parsed)) {
-    const db = parsed.find((item) => item?.name === dbName || item?.database_name === dbName);
-    return db?.uuid ?? db?.database_id ?? null;
-  }
-  return parsed?.uuid ?? parsed?.database_id ?? parsed?.database?.uuid ?? parsed?.database?.database_id ?? null;
+function parseJsonc(text) {
+  return JSON.parse(
+    text
+      .replace(/\/\/.*$/gm, "")
+      .replace(/,\s*([}\]])/g, "$1"),
+  );
 }
 
-function resolveDatabaseId() {
+function resolveDashboardConfig() {
+  const tempDir = mkdtempSync(join(tmpdir(), "tg-blogpost-dash-"));
   try {
-    return extractDatabaseId(runWrangler(["d1", "info", dbName, "--json"]));
-  } catch (infoError) {
-    console.log("D1 info lookup failed; falling back to D1 list...");
-    return extractDatabaseId(runWrangler(["d1", "list", "--json"]));
+    console.log(`Fetching ${workerName} configuration from Cloudflare dashboard...`);
+    runWrangler(["init", ".", "--from-dash", workerName, "--yes"], {
+      cwd: tempDir,
+    });
+
+    const candidates = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"];
+    const configName = candidates.find((name) => existsSync(join(tempDir, name)));
+    if (!configName) {
+      throw new Error("Cloudflare dashboard configuration was not generated.");
+    }
+
+    if (configName.endsWith(".toml")) {
+      throw new Error("Cloudflare returned TOML config; expected JSON/JSONC.");
+    }
+
+    return parseJsonc(readFileSync(join(tempDir, configName), "utf8"));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
 try {
-  console.log(`Resolving D1 database ID for ${dbName}...`);
-  const databaseId = resolveDatabaseId();
+  const source = parseJsonc(readFileSync(sourceConfig, "utf8"));
+  const dashboard = resolveDashboardConfig();
+  const dashboardD1 = Array.isArray(dashboard.d1_databases)
+    ? dashboard.d1_databases.find((db) => db?.binding === "DB")
+    : null;
 
-  if (!databaseId) {
-    throw new Error(`Could not resolve a database ID for ${dbName}.`);
+  if (!dashboardD1?.database_id) {
+    throw new Error("Cloudflare dashboard config does not contain a valid DB D1 binding.");
   }
 
-  console.log(`Resolved D1 database: ${databaseId}`);
+  console.log(`Using dashboard D1 binding: ${dashboardD1.database_name} (${dashboardD1.database_id})`);
 
-  const source = readFileSync(sourceConfig, "utf8");
-  const updated = source.replace(
-    /("database_name"\s*:\s*"tg-blogpost-db"\s*,\s*"database_id"\s*:\s*")[^"]+("\s*)/s,
-    `$1${databaseId}$2`,
-  );
+  const merged = {
+    ...source,
+    d1_databases: [
+      {
+        binding: "DB",
+        database_name: dashboardD1.database_name,
+        database_id: dashboardD1.database_id,
+        ...(dashboardD1.preview_database_id
+          ? { preview_database_id: dashboardD1.preview_database_id }
+          : {}),
+        ...(source.d1_databases?.[0]?.migrations_dir
+          ? { migrations_dir: source.d1_databases[0].migrations_dir }
+          : {}),
+      },
+    ],
+  };
 
-  if (updated === source) {
-    throw new Error("Could not locate the tg-blogpost-db database binding in wrangler.jsonc.");
-  }
+  writeFileSync(deployConfig, JSON.stringify(merged, null, 2), "utf8");
+  console.log(`Deploying with ${deployConfig}...`);
 
-  writeFileSync(deployConfig, updated, "utf8");
-  console.log(`Deploying with resolved D1 binding from ${deployConfig}...`);
-
-  execFileSync("npx", ["--yes", "wrangler", "deploy", "--config", deployConfig], {
+  execFileSync("npx", ["--yes", "wrangler", "deploy", "--config", deployConfig, "--keep-vars"], {
     stdio: "inherit",
   });
 } finally {
-  if (existsSync(deployConfig)) unlinkSync(deployConfig);
+  if (existsSync(deployConfig)) rmSync(deployConfig, { force: true });
 }
