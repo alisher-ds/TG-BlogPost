@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { handleTelegramUpdate, sendApprovalPreview } from "./telegram";
+import { ensureTelegramWebhook, handleTelegramUpdate, sendApprovalPreview } from "./telegram";
 import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./editorial";
 
 export default {
@@ -7,7 +7,18 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
-      return Response.json({ ok: true, service: "tg-blogpost", time: new Date().toISOString() });
+      return Response.json({
+        ok: true,
+        service: "tg-blogpost",
+        time: new Date().toISOString(),
+        configured: {
+          telegram: Boolean(env.TELEGRAM_BOT_TOKEN),
+          gemini: Boolean(env.GEMINI_API_KEY),
+          d1: Boolean(env.DB),
+          admin: Boolean(env.ADMIN_TELEGRAM_ID),
+          blog: Boolean(env.BLOG_USERNAME),
+        },
+      });
     }
 
     if (url.pathname === "/telegram/webhook" && request.method === "POST") {
@@ -41,8 +52,14 @@ export default {
     return new Response("Not Found", { status: 404 });
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil((async () => {
+      try {
+        await ensureTelegramWebhook(env, "https://tg-blogpost.alishertuuchiyev.workers.dev");
+      } catch (error) {
+        console.error("Telegram webhook registration failed", error);
+      }
+
       await publishDue(env);
       await sendDueApprovals(env);
 
