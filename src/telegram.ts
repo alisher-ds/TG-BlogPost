@@ -1,4 +1,4 @@
-import type { Env } from "./types";
+import type { Env, TelegramUpdate } from "./types";
 import { addFeedback, addMemory, getPost, updatePostStatus } from "./lib/db";
 import { runEditorialCycle } from "./editorial";
 
@@ -22,6 +22,7 @@ export async function ensureTelegramWebhook(env: Env, origin: string): Promise<v
     url: webhookUrl,
     allowed_updates: ["message", "callback_query"],
     drop_pending_updates: false,
+    secret_token: env.TELEGRAM_WEBHOOK_SECRET,
   });
 }
 
@@ -61,8 +62,8 @@ export async function answerCallback(env: Env, callbackId: string, text: string)
   await callTelegram(env, "answerCallbackQuery", { callback_query_id: callbackId, text, show_alert: false });
 }
 
-async function clearButtons(env: Env, callback: any): Promise<void> {
-  if (!callback.message?.chat?.id || !callback.message?.message_id) return;
+async function clearButtons(env: Env, callback: TelegramUpdate["callback_query"]): Promise<void> {
+  if (!callback?.message?.chat?.id || !callback.message.message_id) return;
   await callTelegram(env, "editMessageReplyMarkup", {
     chat_id: callback.message.chat.id,
     message_id: callback.message.message_id,
@@ -70,7 +71,7 @@ async function clearButtons(env: Env, callback: any): Promise<void> {
   });
 }
 
-export async function handleTelegramUpdate(env: Env, update: any): Promise<void> {
+export async function handleTelegramUpdate(env: Env, update: TelegramUpdate): Promise<void> {
   const callback = update.callback_query;
   if (!callback) {
     const message = update.message;
