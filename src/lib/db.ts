@@ -32,10 +32,29 @@ export async function claimTelegramUpdate(env: Env, updateId: number): Promise<b
   return (result.meta?.changes ?? 0) > 0;
 }
 
+/** Atomically acquires a named lease. Expired leases are recoverable. */
+export async function acquirePipelineLock(env: Env, name: string, ownerId: string, leaseMinutes = 15): Promise<boolean> {
+  const result = await env.DB.prepare(
+    `INSERT INTO pipeline_locks(name, owner_id, acquired_at, expires_at)
+     VALUES (?1, ?2, datetime('now'), datetime('now', ?3))
+     ON CONFLICT(name) DO UPDATE SET
+       owner_id=excluded.owner_id,
+       acquired_at=excluded.acquired_at,
+       expires_at=excluded.expires_at
+     WHERE pipeline_locks.expires_at <= datetime('now')`,
+  ).bind(name, ownerId, `+${leaseMinutes} minutes`).run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+export async function releasePipelineLock(env: Env, name: string, ownerId: string): Promise<void> {
+  await env.DB.prepare(
+    "DELETE FROM pipeline_locks WHERE name=?1 AND owner_id=?2",
+  ).bind(name, ownerId).run();
+}
+
 /**
  * Atomically claims an approved post for publishing.
- * A stale claim can be recovered after the lease expires, preventing concurrent
- * cron invocations from publishing the same post at the same time.
+ * A stale claim can be recovered after the lease expires.
  */
 export async function claimPostForPublishing(env: Env, postId: string, leaseMinutes = 10): Promise<boolean> {
   const result = await env.DB.prepare(
