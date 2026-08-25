@@ -1,4 +1,24 @@
-import type { Env, PostStatus } from "../types";
+import type { Env, PostStatus, SourceEvidence, Urgency } from "../types";
+
+export interface PostRow {
+  id: string;
+  title: string;
+  angle: string;
+  body: string;
+  status: PostStatus;
+  scheduled_at: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  approval_sent_at: string | null;
+  rejection_reason: string | null;
+  qa_score: number | null;
+  qa_notes: string | null;
+  revision_count: number;
+  publish_claimed_at: string | null;
+  publish_attempts: number;
+  metadata_json: string | null;
+}
 
 export async function getSetting(env: Env, key: string): Promise<string | null> {
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?1").bind(key).first<{ value: string }>();
@@ -32,7 +52,6 @@ export async function claimTelegramUpdate(env: Env, updateId: number): Promise<b
   return (result.meta?.changes ?? 0) > 0;
 }
 
-/** Atomically acquires a named lease. Expired leases are recoverable. */
 export async function acquirePipelineLock(env: Env, name: string, ownerId: string, leaseMinutes = 15): Promise<boolean> {
   const result = await env.DB.prepare(
     `INSERT INTO pipeline_locks(name, owner_id, acquired_at, expires_at)
@@ -47,24 +66,14 @@ export async function acquirePipelineLock(env: Env, name: string, ownerId: strin
 }
 
 export async function releasePipelineLock(env: Env, name: string, ownerId: string): Promise<void> {
-  await env.DB.prepare(
-    "DELETE FROM pipeline_locks WHERE name=?1 AND owner_id=?2",
-  ).bind(name, ownerId).run();
+  await env.DB.prepare("DELETE FROM pipeline_locks WHERE name=?1 AND owner_id=?2").bind(name, ownerId).run();
 }
 
-/**
- * Atomically claims an approved post for publishing.
- * A stale claim can be recovered after the lease expires.
- */
 export async function claimPostForPublishing(env: Env, postId: string, leaseMinutes = 10): Promise<boolean> {
   const result = await env.DB.prepare(
     `UPDATE posts
-     SET publish_claimed_at=datetime('now'),
-         publish_attempts=publish_attempts+1,
-         updated_at=datetime('now')
-     WHERE id=?1
-       AND status='approved'
-       AND scheduled_at IS NOT NULL
+     SET publish_claimed_at=datetime('now'), publish_attempts=publish_attempts+1, updated_at=datetime('now')
+     WHERE id=?1 AND status='approved' AND scheduled_at IS NOT NULL
        AND unixepoch(scheduled_at) <= unixepoch('now')
        AND (publish_claimed_at IS NULL OR unixepoch(publish_claimed_at) <= unixepoch('now', ?2))`,
   ).bind(postId, `-${leaseMinutes} minutes`).run();
@@ -72,40 +81,32 @@ export async function claimPostForPublishing(env: Env, postId: string, leaseMinu
 }
 
 export async function releasePublishClaim(env: Env, postId: string): Promise<void> {
-  await env.DB.prepare(
-    "UPDATE posts SET publish_claimed_at=NULL, updated_at=datetime('now') WHERE id=?1 AND status='approved'",
-  ).bind(postId).run();
+  await env.DB.prepare("UPDATE posts SET publish_claimed_at=NULL, updated_at=datetime('now') WHERE id=?1 AND status='approved'").bind(postId).run();
 }
 
 export async function getLatestPosts(env: Env, limit = 20) {
   const result = await env.DB.prepare(
     "SELECT id, title, angle, body, status, scheduled_at, published_at, created_at, rejection_reason FROM posts ORDER BY COALESCE(published_at, created_at) DESC LIMIT ?1",
-  ).bind(limit).all();
+  ).bind(limit).all<Pick<PostRow, "id" | "title" | "angle" | "body" | "status" | "scheduled_at" | "published_at" | "created_at" | "rejection_reason">>();
   return result.results;
 }
 
 export async function getRecentBodies(env: Env, limit = 30): Promise<string[]> {
-  const result = await env.DB.prepare(
-    "SELECT body FROM posts WHERE status IN ('published','approved','scheduled','pending_approval','draft') ORDER BY created_at DESC LIMIT ?1",
-  ).bind(limit).all<{ body: string }>();
+  const result = await env.DB.prepare("SELECT body FROM posts WHERE status IN ('published','approved','scheduled','pending_approval','draft') ORDER BY created_at DESC LIMIT ?1").bind(limit).all<{ body: string }>();
   return result.results.map((row) => row.body);
 }
 
-export async function getRecentTopics(env: Env, limit = 50) {
-  const result = await env.DB.prepare(
-    "SELECT topic, angle, status FROM topics ORDER BY created_at DESC LIMIT ?1",
-  ).bind(limit).all();
+export async function getRecentTopics(env: Env, limit = 50): Promise<Array<{ topic: string; angle: string; status: PostStatus }>> {
+  const result = await env.DB.prepare("SELECT topic, angle, status FROM topics ORDER BY created_at DESC LIMIT ?1").bind(limit).all<{ topic: string; angle: string; status: PostStatus }>();
   return result.results;
 }
 
-export async function getStyleRules(env: Env) {
-  const result = await env.DB.prepare(
-    "SELECT key, value, confidence FROM style_rules ORDER BY confidence DESC, updated_at DESC",
-  ).all();
+export async function getStyleRules(env: Env): Promise<Array<{ key: string; value: string; confidence: number }>> {
+  const result = await env.DB.prepare("SELECT key, value, confidence FROM style_rules ORDER BY confidence DESC, updated_at DESC").bind().all<{ key: string; value: string; confidence: number }>();
   return result.results;
 }
 
-export async function insertTopic(env: Env, topic: { topic: string; angle: string; score: number; novelty_score: number; alisher_fit_score: number; value_score: number; urgency: string; evidence: unknown[] }): Promise<string> {
+export async function insertTopic(env: Env, topic: { topic: string; angle: string; score: number; novelty_score: number; alisher_fit_score: number; value_score: number; urgency: Urgency; evidence: SourceEvidence[] }): Promise<string> {
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO topics(id, topic, angle, score, novelty_score, alisher_fit_score, value_score, urgency, status, evidence_json, created_at)
@@ -123,8 +124,8 @@ export async function insertPost(env: Env, post: { title: string; angle: string;
   return id;
 }
 
-export async function getPost(env: Env, id: string) {
-  return env.DB.prepare("SELECT * FROM posts WHERE id=?1").bind(id).first<any>();
+export async function getPost(env: Env, id: string): Promise<PostRow | null> {
+  return env.DB.prepare("SELECT * FROM posts WHERE id=?1").bind(id).first<PostRow>();
 }
 
 export async function updatePostStatus(env: Env, id: string, status: PostStatus, extra: Record<string, unknown> = {}): Promise<void> {
@@ -132,7 +133,7 @@ export async function updatePostStatus(env: Env, id: string, status: PostStatus,
   const values: unknown[] = [id, status];
   let index = 3;
   for (const [key, value] of Object.entries(extra)) {
-    if (!['scheduled_at','approval_sent_at','published_at','rejection_reason','qa_score','qa_notes','revision_count','publish_claimed_at','publish_attempts'].includes(key)) continue;
+    if (!["scheduled_at","approval_sent_at","published_at","rejection_reason","qa_score","qa_notes","revision_count","publish_claimed_at","publish_attempts"].includes(key)) continue;
     sets.push(`${key}=?${index++}`);
     values.push(value);
   }
@@ -140,13 +141,9 @@ export async function updatePostStatus(env: Env, id: string, status: PostStatus,
 }
 
 export async function addFeedback(env: Env, postId: string, action: string, message?: string): Promise<void> {
-  await env.DB.prepare(
-    "INSERT INTO feedback(id,post_id,action,message,created_at) VALUES (?1,?2,?3,?4,datetime('now'))",
-  ).bind(crypto.randomUUID(), postId, action, message ?? null).run();
+  await env.DB.prepare("INSERT INTO feedback(id,post_id,action,message,created_at) VALUES (?1,?2,?3,?4,datetime('now'))").bind(crypto.randomUUID(), postId, action, message ?? null).run();
 }
 
 export async function addMemory(env: Env, kind: string, key: string | null, value: string, weight = 1): Promise<void> {
-  await env.DB.prepare(
-    "INSERT INTO memory(id,kind,key,value,weight,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,datetime('now'),datetime('now'))",
-  ).bind(crypto.randomUUID(), kind, key, value, weight).run();
+  await env.DB.prepare("INSERT INTO memory(id,kind,key,value,weight,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,datetime('now'),datetime('now'))").bind(crypto.randomUUID(), kind, key, value, weight).run();
 }
