@@ -38,8 +38,21 @@ export async function geminiText(env: Env, prompt: string, useSearch = false): P
   return { text, grounding: candidate?.groundingMetadata ?? {} };
 }
 
-export async function geminiJson<T>(env: Env, prompt: string, useSearch = false): Promise<T> {
+export async function geminiJson<T>(
+  env: Env,
+  prompt: string,
+  useSearch = false,
+  validate?: (value: unknown) => T,
+): Promise<T> {
   const result = await geminiText(env, `${prompt}\n\nReturn ONLY valid JSON. No markdown fences.`, useSearch);
   const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  return JSON.parse(cleaned) as T;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (error) {
+    throw new Error(`Gemini returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  return validate ? validate(parsed) : (parsed as T);
 }
