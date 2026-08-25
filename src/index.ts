@@ -1,8 +1,9 @@
-import type { Env, TelegramUpdate } from "./types";
+import type { Env } from "./types";
 import { ensureSchema } from "./schema";
 import { claimTelegramUpdate } from "./lib/db";
 import { ensureTelegramWebhook, handleTelegramUpdate, sendApprovalPreview } from "./telegram";
 import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./editorial";
+import { parseTelegramUpdate, requireEnv } from "./lib/validation";
 
 const WORKER_ORIGIN = "https://tg-blogpost.alishertuuchiyev.workers.dev";
 
@@ -32,19 +33,17 @@ export default {
     }
 
     try {
+      requireEnv(env);
       await ensureSchema(env);
     } catch (error) {
-      console.error("D1 schema bootstrap failed", error);
-      return Response.json({ ok: false, error: "d1_schema_bootstrap_failed" }, { status: 503 });
+      console.error("Worker bootstrap validation failed", error);
+      return Response.json({ ok: false, error: "worker_configuration_invalid" }, { status: 503 });
     }
 
     if (url.pathname === "/setup-webhook" && request.method === "GET") {
       if (!isAdminRequest(request, env)) return new Response("Unauthorized", { status: 401 });
 
       try {
-        if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) {
-          return Response.json({ ok: false, error: "telegram_webhook_config_missing" }, { status: 500 });
-        }
         await ensureTelegramWebhook(env, WORKER_ORIGIN);
         return Response.json({ ok: true, webhook: `${WORKER_ORIGIN}/telegram/webhook` });
       } catch (error) {
@@ -55,12 +54,18 @@ export default {
     }
 
     if (url.pathname === "/telegram/webhook" && request.method === "POST") {
-      if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.TELEGRAM_WEBHOOK_SECRET) {
+      if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.TELEGRAM_WEBHOOK_SECRET) {
         return new Response("Unauthorized", { status: 401 });
       }
 
-      const update = (await request.json()) as TelegramUpdate;
-      if (!Number.isInteger(update.update_id)) return Response.json({ ok: false, error: "invalid_update" }, { status: 400 });
+      let update;
+      try {
+        update = parseTelegramUpdate(await request.json());
+      } catch (error) {
+        console.error("Invalid Telegram update", error);
+        return Response.json({ ok: false, error: "invalid_update" }, { status: 400 });
+      }
+
       if (!(await claimTelegramUpdate(env, update.update_id))) return Response.json({ ok: true, duplicate: true });
 
       ctx.waitUntil((async () => {
@@ -99,6 +104,7 @@ export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil((async () => {
       try {
+        requireEnv(env);
         await ensureSchema(env);
         await ensureTelegramWebhook(env, WORKER_ORIGIN);
       } catch (error) {
