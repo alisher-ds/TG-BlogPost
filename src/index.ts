@@ -5,6 +5,11 @@ import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./e
 
 const WORKER_ORIGIN = "https://tg-blogpost.alishertuuchiyev.workers.dev";
 
+function isAdminRequest(request: Request, env: Env): boolean {
+  const provided = request.headers.get("x-admin-secret");
+  return Boolean(env.ADMIN_SECRET) && provided === env.ADMIN_SECRET;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -18,7 +23,7 @@ export default {
           telegram: Boolean(env.TELEGRAM_BOT_TOKEN),
           gemini: Boolean(env.GEMINI_API_KEY),
           d1: Boolean(env.DB),
-          admin: Boolean(env.ADMIN_TELEGRAM_ID),
+          admin: Boolean(env.ADMIN_SECRET && env.ADMIN_TELEGRAM_ID),
           blog: Boolean(env.BLOG_USERNAME),
         },
       });
@@ -63,16 +68,16 @@ export default {
     }
 
     if (url.pathname === "/admin/run" && request.method === "POST") {
-      if (request.headers.get("x-admin-secret") !== env.ADMIN_TELEGRAM_ID) return new Response("Unauthorized", { status: 401 });
+      if (!isAdminRequest(request, env)) return new Response("Unauthorized", { status: 401 });
       ctx.waitUntil(runEditorialCycle(env));
       return Response.json({ ok: true, queued: true });
     }
 
     if (url.pathname === "/admin/revise" && request.method === "POST") {
-      if (request.headers.get("x-admin-secret") !== env.ADMIN_TELEGRAM_ID) return new Response("Unauthorized", { status: 401 });
+      if (!isAdminRequest(request, env)) return new Response("Unauthorized", { status: 401 });
       const body = await request.json() as { instruction?: string };
-      if (!body.instruction) return Response.json({ ok: false, error: "instruction_required" }, { status: 400 });
-      const postId = await revisePost(env, body.instruction);
+      if (!body.instruction?.trim()) return Response.json({ ok: false, error: "instruction_required" }, { status: 400 });
+      const postId = await revisePost(env, body.instruction.trim());
       if (postId) await sendApprovalPreview(env, postId);
       return Response.json({ ok: true, postId });
     }
