@@ -1,5 +1,6 @@
 import type { Env, TelegramUpdate } from "./types";
 import { ensureSchema } from "./schema";
+import { claimTelegramUpdate } from "./lib/db";
 import { ensureTelegramWebhook, handleTelegramUpdate, sendApprovalPreview } from "./telegram";
 import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./editorial";
 
@@ -59,6 +60,9 @@ export default {
       }
 
       const update = (await request.json()) as TelegramUpdate;
+      if (!Number.isInteger(update.update_id)) return Response.json({ ok: false, error: "invalid_update" }, { status: 400 });
+      if (!(await claimTelegramUpdate(env, update.update_id))) return Response.json({ ok: true, duplicate: true });
+
       ctx.waitUntil((async () => {
         try {
           await handleTelegramUpdate(env, update);
