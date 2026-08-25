@@ -17,6 +17,7 @@ export interface Env {
   GEMINI_API_KEY: string;
   BLOG_USERNAME: string;
   ADMIN_TELEGRAM_ID: string;
+  ADMIN_SECRET: string;
   TIMEZONE: string;
   DEFAULT_MIN_POST_GAP_HOURS: string;
   DEFAULT_MAX_POST_GAP_HOURS: string;
