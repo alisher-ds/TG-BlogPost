@@ -1,6 +1,6 @@
 import type { Env, DraftPost } from "./types";
 import { researchAndSelect, qualityCheck, writeDraft } from "./agents/editorial";
-import { addFeedback, createRun, finishRun, getPost, insertPost, updatePostStatus } from "./lib/db";
+import { addFeedback, claimPostForPublishing, createRun, finishRun, getPost, insertPost, releasePublishClaim, updatePostStatus } from "./lib/db";
 import { sendApprovalPreview, publishPost } from "./telegram";
 import { geminiJson } from "./providers/gemini";
 import { ALISHER_STYLE_DNA } from "./prompts/style";
@@ -89,10 +89,16 @@ export async function publishDue(env: Env): Promise<void> {
   ).all<{ id: string }>();
 
   for (const row of rows.results) {
+    const claimed = await claimPostForPublishing(env, row.id, 10);
+    if (!claimed) continue;
+
     try {
       await publishPost(env, row.id);
     } catch (error) {
-      await updatePostStatus(env, row.id, "failed", { rejection_reason: error instanceof Error ? error.message : String(error) });
+      await releasePublishClaim(env, row.id);
+      await updatePostStatus(env, row.id, "failed", {
+        rejection_reason: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }
@@ -118,7 +124,7 @@ Return JSON: {"body":"...","angle":"...","change_summary":"..."}`;
 
   const revision = await geminiJson<{ body: string; angle: string; change_summary: string }>(env, prompt, false);
   await env.DB.prepare(
-    "UPDATE posts SET body=?2, angle=?3, status='scheduled', revision_count=revision_count+1, rejection_reason=NULL, approval_sent_at=NULL, updated_at=datetime('now') WHERE id=?1",
+    "UPDATE posts SET body=?2, angle=?3, status='scheduled', revision_count=revision_count+1, rejection_reason=NULL, approval_sent_at=NULL, publish_claimed_at=NULL, updated_at=datetime('now') WHERE id=?1",
   ).bind(post.id, revision.body, revision.angle).run();
   await addFeedback(env, post.id, "revision", instruction);
   return post.id;
