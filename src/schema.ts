@@ -113,6 +113,14 @@ CREATE TABLE IF NOT EXISTS processed_telegram_updates (
 );
 CREATE INDEX IF NOT EXISTS idx_processed_telegram_updates_time ON processed_telegram_updates(processed_at DESC);
 
+CREATE TABLE IF NOT EXISTS pipeline_locks (
+  name TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  acquired_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_locks_expiry ON pipeline_locks(expires_at);
+
 INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES
   ('blog_username', 'AlisherTuychiyev', datetime('now')),
   ('admin_telegram_id', '6276407335', datetime('now')),
@@ -149,8 +157,6 @@ ALTER TABLE posts ADD COLUMN publish_attempts INTEGER NOT NULL DEFAULT 0;
 export function ensureSchema(env: Env): Promise<void> {
   if (!schemaPromise) {
     schemaPromise = env.DB.exec(SCHEMA_SQL).then(() => undefined).catch(async (error) => {
-      // ALTER TABLE reports a duplicate-column error when an existing database
-      // already has the columns. Keep bootstrap idempotent in that case.
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("duplicate column name")) return;
       schemaPromise = null;
