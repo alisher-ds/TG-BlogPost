@@ -7,11 +7,13 @@
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
     "typescript": "latest",
-    "wrangler": "latest"
+    "wrangler": "latest",
+    "vitest": "latest"
   }
 }
