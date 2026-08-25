@@ -104,6 +104,12 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS processed_telegram_updates (
+  update_id INTEGER PRIMARY KEY,
+  processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_processed_telegram_updates_time ON processed_telegram_updates(processed_at DESC);
+
 INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES
   ('blog_username', 'AlisherTuychiyev', datetime('now')),
   ('admin_telegram_id', '6276407335', datetime('now')),
