@@ -1,5 +1,5 @@
 import type { Env, TelegramUpdate } from "./types";
-import { addFeedback, addMemory, getPost, updatePostStatus } from "./lib/db";
+import { addFeedback, addMemory, claimTelegramUpdate, getPost, updatePostStatus } from "./lib/db";
 import { runEditorialCycle } from "./editorial";
 
 const api = (env: Env, method: string) => `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`;
@@ -50,12 +50,24 @@ export async function sendApprovalPreview(env: Env, postId: string): Promise<voi
 export async function publishPost(env: Env, postId: string): Promise<void> {
   const post = await getPost(env, postId);
   if (!post) throw new Error("Post not found");
-  await callTelegram(env, "sendMessage", {
+  if (post.status !== "approved") throw new Error(`Post is not publishable: ${post.status}`);
+
+  const result = await callTelegram<{ message_id: number }>(env, "sendMessage", {
     chat_id: `@${env.BLOG_USERNAME}`,
     text: post.body,
     disable_web_page_preview: false,
   });
-  await updatePostStatus(env, postId, "published", { published_at: new Date().toISOString() });
+
+  await updatePostStatus(env, postId, "published", {
+    published_at: new Date().toISOString(),
+    publish_claimed_at: null,
+  });
+
+  console.info("Post published", {
+    postId,
+    telegramMessageId: result.message_id,
+    publishAttempts: (post.publish_attempts ?? 0) + 1,
+  });
 }
 
 export async function answerCallback(env: Env, callbackId: string, text: string): Promise<void> {
