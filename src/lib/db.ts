@@ -25,6 +25,13 @@ export async function finishRun(env: Env, id: string, status: string, error?: st
   ).bind(id, status, error ?? null).run();
 }
 
+export async function claimTelegramUpdate(env: Env, updateId: number): Promise<boolean> {
+  const result = await env.DB.prepare(
+    "INSERT OR IGNORE INTO processed_telegram_updates(update_id, processed_at) VALUES (?1, datetime('now'))",
+  ).bind(updateId).run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
 export async function getLatestPosts(env: Env, limit = 20) {
   const result = await env.DB.prepare(
     "SELECT id, title, angle, body, status, scheduled_at, published_at, created_at, rejection_reason FROM posts ORDER BY COALESCE(published_at, created_at) DESC LIMIT ?1",
