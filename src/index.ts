@@ -1,4 +1,4 @@
-import type { Env } from "./types";
+import type { Env, TelegramUpdate } from "./types";
 import { ensureSchema } from "./schema";
 import { ensureTelegramWebhook, handleTelegramUpdate, sendApprovalPreview } from "./telegram";
 import { publishDue, revisePost, runEditorialCycle, sendDueApprovals } from "./editorial";
@@ -21,6 +21,7 @@ export default {
         time: new Date().toISOString(),
         configured: {
           telegram: Boolean(env.TELEGRAM_BOT_TOKEN),
+          telegramWebhook: Boolean(env.TELEGRAM_WEBHOOK_SECRET),
           gemini: Boolean(env.GEMINI_API_KEY),
           d1: Boolean(env.DB),
           admin: Boolean(env.ADMIN_SECRET && env.ADMIN_TELEGRAM_ID),
@@ -37,9 +38,11 @@ export default {
     }
 
     if (url.pathname === "/setup-webhook" && request.method === "GET") {
+      if (!isAdminRequest(request, env)) return new Response("Unauthorized", { status: 401 });
+
       try {
-        if (!env.TELEGRAM_BOT_TOKEN) {
-          return Response.json({ ok: false, error: "telegram_token_missing" }, { status: 500 });
+        if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) {
+          return Response.json({ ok: false, error: "telegram_webhook_config_missing" }, { status: 500 });
         }
         await ensureTelegramWebhook(env, WORKER_ORIGIN);
         return Response.json({ ok: true, webhook: `${WORKER_ORIGIN}/telegram/webhook` });
@@ -51,11 +54,15 @@ export default {
     }
 
     if (url.pathname === "/telegram/webhook" && request.method === "POST") {
-      const update = await request.json() as any;
+      if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.TELEGRAM_WEBHOOK_SECRET) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const update = (await request.json()) as TelegramUpdate;
       ctx.waitUntil((async () => {
         try {
           await handleTelegramUpdate(env, update);
-          const message = update?.message;
+          const message = update.message;
           if (message?.chat?.id?.toString() === env.ADMIN_TELEGRAM_ID && typeof message.text === "string" && !message.text.startsWith("/")) {
             const postId = await revisePost(env, message.text.trim());
             if (postId) await sendApprovalPreview(env, postId);
@@ -75,7 +82,7 @@ export default {
 
     if (url.pathname === "/admin/revise" && request.method === "POST") {
       if (!isAdminRequest(request, env)) return new Response("Unauthorized", { status: 401 });
-      const body = await request.json() as { instruction?: string };
+      const body = (await request.json()) as { instruction?: string };
       if (!body.instruction?.trim()) return Response.json({ ok: false, error: "instruction_required" }, { status: 400 });
       const postId = await revisePost(env, body.instruction.trim());
       if (postId) await sendApprovalPreview(env, postId);
