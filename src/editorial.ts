@@ -1,12 +1,19 @@
-import type { Env, DraftPost } from "./types";
+import type { Env } from "./types";
 import { researchAndSelect, qualityCheck, writeDraft } from "./agents/editorial";
-import { addFeedback, claimPostForPublishing, createRun, finishRun, getPost, insertPost, releasePublishClaim, updatePostStatus } from "./lib/db";
+import { acquirePipelineLock, addFeedback, claimPostForPublishing, createRun, finishRun, getPost, insertPost, releasePipelineLock, releasePublishClaim, updatePostStatus } from "./lib/db";
 import { sendApprovalPreview, publishPost } from "./telegram";
 import { geminiJson } from "./providers/gemini";
 import { ALISHER_STYLE_DNA } from "./prompts/style";
 
 export async function runEditorialCycle(env: Env): Promise<void> {
   const runId = await createRun(env, "editorial-cycle");
+  const lockOwner = runId;
+  const acquired = await acquirePipelineLock(env, "editorial-cycle", lockOwner, 15);
+  if (!acquired) {
+    await finishRun(env, runId, "skipped", "Another editorial cycle is already running");
+    return;
+  }
+
   try {
     const existing = await env.DB.prepare(
       "SELECT COUNT(*) AS count FROM posts WHERE status IN ('draft','pending_approval','approved','scheduled','revision_requested')",
@@ -36,7 +43,7 @@ export async function runEditorialCycle(env: Env): Promise<void> {
       return;
     }
 
-    const scheduledAt = chooseNaturalTime(draft.proposed_time, env.DEFAULT_MIN_POST_GAP_HOURS, env.DEFAULT_MAX_POST_GAP_HOURS);
+    const scheduledAt = chooseNaturalTime(finalDraft.proposed_time, env.DEFAULT_MIN_POST_GAP_HOURS, env.DEFAULT_MAX_POST_GAP_HOURS);
     const postId = await insertPost(env, {
       title: finalDraft.title,
       angle: finalDraft.angle,
@@ -62,6 +69,8 @@ export async function runEditorialCycle(env: Env): Promise<void> {
   } catch (error) {
     await finishRun(env, runId, "failed", error instanceof Error ? error.message : String(error));
     throw error;
+  } finally {
+    await releasePipelineLock(env, "editorial-cycle", lockOwner);
   }
 }
 
