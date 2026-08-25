@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS posts (
   scheduled_at TEXT,
   approval_sent_at TEXT,
   published_at TEXT,
+  publish_claimed_at TEXT,
+  publish_attempts INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   revision_count INTEGER NOT NULL DEFAULT 0,
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS posts (
   metadata_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_posts_status_schedule ON posts(status, scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_posts_publish_claim ON posts(status, publish_claimed_at);
 CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS sources (
@@ -137,11 +140,19 @@ INSERT OR IGNORE INTO style_rules(key,value,confidence,source,updated_at) VALUES
   ('image_policy','Images are optional and disabled in the core pipeline',1.0,'manual-style-analysis',datetime('now')),
   ('ending_policy','Do not force a moral, motivational ending or question',1.0,'manual-style-analysis',datetime('now')),
   ('quality_policy','No post is better than a weak or filler post',1.0,'manual-style-analysis',datetime('now'));
+
+-- Backward-compatible migration for databases created before publish claims existed.
+ALTER TABLE posts ADD COLUMN publish_claimed_at TEXT;
+ALTER TABLE posts ADD COLUMN publish_attempts INTEGER NOT NULL DEFAULT 0;
 `;
 
 export function ensureSchema(env: Env): Promise<void> {
   if (!schemaPromise) {
-    schemaPromise = env.DB.exec(SCHEMA_SQL).then(() => undefined).catch((error) => {
+    schemaPromise = env.DB.exec(SCHEMA_SQL).then(() => undefined).catch(async (error) => {
+      // ALTER TABLE reports a duplicate-column error when an existing database
+      // already has the columns. Keep bootstrap idempotent in that case.
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("duplicate column name")) return;
       schemaPromise = null;
       throw error;
     });
