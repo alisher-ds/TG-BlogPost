@@ -1,6 +1,7 @@
 import type { Env, DraftPost, QAResult, TopicCandidate } from "../types";
 import { geminiJson } from "../providers/gemini";
 import { getRecentBodies, getRecentTopics, getStyleRules, insertTopic } from "../lib/db";
+import { parseDraftPost, parseQAResult, parseTopicCandidate } from "../lib/validation";
 import { ALISHER_STYLE_DNA } from "../prompts/style";
 
 function compact(text: string, max = 9000): string {
@@ -53,8 +54,9 @@ Return JSON:
 
 Only select a topic if the combined quality is genuinely high. Otherwise return {"reject":true}.`;
 
-  const candidate = await geminiJson<TopicCandidate & { reject?: boolean }>(env, prompt, true);
-  if (candidate.reject) return null;
+  const raw = await geminiJson<TopicCandidate & { reject?: boolean }>(env, prompt, true);
+  if (raw.reject) return null;
+  const candidate = parseTopicCandidate(raw);
 
   const score = (
     candidate.novelty_score * 0.28 +
@@ -97,7 +99,7 @@ Rules:
 Return JSON with title, angle, body, urgency, proposed_time, reasoning.
 The proposed_time must be an ISO timestamp in Asia/Tashkent and should be a natural publishing time, not a fixed recurring slot.`;
 
-  return geminiJson<DraftPost>(env, prompt, false);
+  return geminiJson<DraftPost>(env, prompt, false, parseDraftPost);
 }
 
 export async function qualityCheck(env: Env, draft: DraftPost): Promise<QAResult> {
@@ -130,5 +132,5 @@ Return JSON:
 
 Pass only at 85+. A score below 85 must be revised or rejected.`;
 
-  return geminiJson<QAResult>(env, prompt, false);
+  return geminiJson<QAResult>(env, prompt, false, parseQAResult);
 }
