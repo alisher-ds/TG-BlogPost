@@ -32,6 +32,32 @@ export async function claimTelegramUpdate(env: Env, updateId: number): Promise<b
   return (result.meta?.changes ?? 0) > 0;
 }
 
+/**
+ * Atomically claims an approved post for publishing.
+ * A stale claim can be recovered after the lease expires, preventing concurrent
+ * cron invocations from publishing the same post at the same time.
+ */
+export async function claimPostForPublishing(env: Env, postId: string, leaseMinutes = 10): Promise<boolean> {
+  const result = await env.DB.prepare(
+    `UPDATE posts
+     SET publish_claimed_at=datetime('now'),
+         publish_attempts=publish_attempts+1,
+         updated_at=datetime('now')
+     WHERE id=?1
+       AND status='approved'
+       AND scheduled_at IS NOT NULL
+       AND unixepoch(scheduled_at) <= unixepoch('now')
+       AND (publish_claimed_at IS NULL OR unixepoch(publish_claimed_at) <= unixepoch('now', ?2))`,
+  ).bind(postId, `-${leaseMinutes} minutes`).run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+export async function releasePublishClaim(env: Env, postId: string): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE posts SET publish_claimed_at=NULL, updated_at=datetime('now') WHERE id=?1 AND status='approved'",
+  ).bind(postId).run();
+}
+
 export async function getLatestPosts(env: Env, limit = 20) {
   const result = await env.DB.prepare(
     "SELECT id, title, angle, body, status, scheduled_at, published_at, created_at, rejection_reason FROM posts ORDER BY COALESCE(published_at, created_at) DESC LIMIT ?1",
@@ -87,7 +113,7 @@ export async function updatePostStatus(env: Env, id: string, status: PostStatus,
   const values: unknown[] = [id, status];
   let index = 3;
   for (const [key, value] of Object.entries(extra)) {
-    if (!['scheduled_at','approval_sent_at','published_at','rejection_reason','qa_score','qa_notes','revision_count'].includes(key)) continue;
+    if (!['scheduled_at','approval_sent_at','published_at','rejection_reason','qa_score','qa_notes','revision_count','publish_claimed_at','publish_attempts'].includes(key)) continue;
     sets.push(`${key}=?${index++}`);
     values.push(value);
   }
