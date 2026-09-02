@@ -1,3 +1,4 @@
+/** Lifecycle state of a blog post through the editorial pipeline */
 export type PostStatus =
   | "candidate"
   | "draft"
@@ -9,6 +10,7 @@ export type PostStatus =
   | "revision_requested"
   | "failed";
 
+/** Topic urgency classification determining scheduling priority */
 export type Urgency = "evergreen" | "timely" | "breaking";
 
 export interface Env {
