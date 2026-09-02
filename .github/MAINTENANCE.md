@@ -10,3 +10,6 @@
 ## Scheduled Triggers
 
 - `*/5 * * * *` (Every 5 minutes): Runs periodic editorial check, publication queues, and reminder dispatch.
+
+## Resilience and Rate-Limits
+- Exponential backoff is applied for external AI and search provider calls.
