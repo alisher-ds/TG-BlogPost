@@ -80,7 +80,7 @@ The system is intentionally allowed to **publish nothing** when the available ma
 
 ### Runtime model
 
-The Worker runs on a five-minute cron. Each cycle bootstraps the D1 schema, maintains the Telegram webhook, publishes due posts, sends approval reminders, and starts a new editorial cycle only when there is no active post in the pipeline. fileciteturn27file0
+The Worker runs on a five-minute cron. Each cycle bootstraps the D1 schema, maintains the Telegram webhook, publishes due posts, sends approval reminders, and starts a new editorial cycle only when there is no active post in the pipeline.
 
 ---
 
@@ -109,7 +109,7 @@ Natural scheduling
 └───────────────┘
 ```
 
-The current production behavior is deliberately conservative: no sufficiently good topic means **no post**. That is a feature, not a failure mode. fileciteturn28file0
+The current production behavior is deliberately conservative: no sufficiently good topic means **no post**. That is a feature, not a failure mode.
 
 ---
 
@@ -146,13 +146,13 @@ src/
 └── index.ts         # Worker entrypoint
 ```
 
-The repository keeps domain responsibilities separated instead of putting the entire bot in one handler. The Worker entrypoint coordinates infrastructure and delegates editorial behavior to focused modules. fileciteturn36file0
+The repository keeps domain responsibilities separated instead of putting the entire bot in one handler. The Worker entrypoint coordinates infrastructure and delegates editorial behavior to focused modules.
 
 ---
 
 ## Production deployment
 
-The production deployment uses the existing Cloudflare Worker configuration and dashboard-managed bindings. The repository does not provision or rename the production D1 database during deployment. `npm run deploy` resolves to the standard Wrangler deployment command. fileciteturn28file0
+The production deployment uses the existing Cloudflare Worker configuration and dashboard-managed bindings. The repository does not provision or rename the production D1 database during deployment. `npm run deploy` resolves to the standard Wrangler deployment command.
 
 Required runtime configuration includes:
 
