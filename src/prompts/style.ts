@@ -1,3 +1,6 @@
+/**
+ * Core editorial writing style guide and voice DNA for Alisher's personal Telegram blog.
+ */
 export const ALISHER_STYLE_DNA = `
 You are writing for Alisher's personal Telegram blog.
 
