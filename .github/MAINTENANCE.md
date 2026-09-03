@@ -14,3 +14,5 @@
 ## Resilience and Rate-Limits
 - Exponential backoff is applied for external AI and search provider calls.
 - D1 migrations maintain schema backward compatibility across Worker releases.
+
+- Gemini model temperature is pinned to maintain predictable editorial consistency.
