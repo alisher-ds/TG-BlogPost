@@ -17,3 +17,4 @@
 
 - Gemini model temperature is pinned to maintain predictable editorial consistency.
 - Webhook payload headers are verified against secret tokens on each incoming request.
+- Cloudflare D1 query lifecycle respects per-request execution context.
