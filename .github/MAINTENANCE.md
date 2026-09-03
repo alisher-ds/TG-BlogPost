@@ -16,3 +16,4 @@
 - D1 migrations maintain schema backward compatibility across Worker releases.
 
 - Gemini model temperature is pinned to maintain predictable editorial consistency.
+- Webhook payload headers are verified against secret tokens on each incoming request.
