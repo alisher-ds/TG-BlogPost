@@ -21,3 +21,4 @@
 - Publishing window operates during peak reader engagement hours.
 
 - Worker memory allocation is set to standard tier with adequate headroom for JSON payload parsing.
+- Cloudflare D1 handles automated WAL checkpointing without blocking read queries.
