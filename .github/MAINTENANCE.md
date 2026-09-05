@@ -35,3 +35,4 @@
 - Repetitive syntactic structures incur strong penalties during automated editorial QA.
 - Admin inline approval callbacks validate admin Telegram ID and payload nonce before executing actions.
 - Tone avoids sensationalism and hype, focusing instead on underlying architectural principles.
+- HTTP 429 rate limit responses from Telegram trigger exponential backoff according to retry_after parameter.
