@@ -33,3 +33,4 @@
 - Post state transitions and telemetry metrics are committed atomically using D1 batch API.
 - Input context is constrained below 8,000 tokens per drafting prompt to ensure low generation latency.
 - Repetitive syntactic structures incur strong penalties during automated editorial QA.
+- Admin inline approval callbacks validate admin Telegram ID and payload nonce before executing actions.
