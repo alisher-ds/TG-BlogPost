@@ -30,3 +30,4 @@
 - Telegram API publishing failures retry up to 3 times before transitioning post to failed state.
 
 - Research agent concurrency is bounded by Cloudflare Worker subrequest limits (up to 50 concurrent fetch calls).
+- Post state transitions and telemetry metrics are committed atomically using D1 batch API.
