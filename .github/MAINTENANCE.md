@@ -32,3 +32,4 @@
 - Research agent concurrency is bounded by Cloudflare Worker subrequest limits (up to 50 concurrent fetch calls).
 - Post state transitions and telemetry metrics are committed atomically using D1 batch API.
 - Input context is constrained below 8,000 tokens per drafting prompt to ensure low generation latency.
+- Repetitive syntactic structures incur strong penalties during automated editorial QA.
