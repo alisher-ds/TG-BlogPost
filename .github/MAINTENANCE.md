@@ -28,3 +28,5 @@
 - Rejection feedback triggers revision prompt with previous draft critique.
 - Cron schedules incorporate random jitter to prevent predictable exact-minute bursts.
 - Telegram API publishing failures retry up to 3 times before transitioning post to failed state.
+
+- Research agent concurrency is bounded by Cloudflare Worker subrequest limits (up to 50 concurrent fetch calls).
